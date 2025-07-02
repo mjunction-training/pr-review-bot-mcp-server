@@ -1,17 +1,26 @@
 import os
 import re
+import logging
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_anthropic import ChatAnthropic
 from langchain_core.output_parsers import StrOutputParser
-from vector_store import get_vector_store
-import logging
 
 logger = logging.getLogger(__name__)
 
 MAX_DIFF_LENGTH = 100000  # 100K characters
-CHUNK_SIZE = 4000  # For splitting large diffs
+CHUNK_SIZE = 6000  # Increased for efficiency
+
+def load_guidelines():
+    """Load guidelines from markdown file"""
+    try:
+        with open("guidelines.md.txt", "r") as f:
+            return f.read()
+    except Exception as e:
+        logger.error(f"Failed to load guidelines: {str(e)}")
+        return ""
 
 def split_diff(diff):
+    """Split large diffs into manageable chunks"""
     if len(diff) <= MAX_DIFF_LENGTH:
         return [diff]
     
@@ -26,26 +35,17 @@ def split_diff(diff):
         chunks.append(current_chunk)
     return chunks
 
-def get_relevant_guidelines(diff_chunk, vector_store):
-    if not vector_store:
-        return ""
-    
-    try:
-        docs = vector_store.similarity_search(diff_chunk, k=3)
-        return "\n".join([d.page_content for d in docs])
-    except Exception as e:
-        logger.error(f"Vector search failed: {str(e)}")
-        return ""
-
 def process_review(diff, repo, pr_id, metadata):
-    # Initialize components
+    # Load guidelines once
+    guidelines = load_guidelines()
+    
+    # Initialize Claude model
     llm = ChatAnthropic(
         model="claude-3-sonnet-20240229",
         temperature=0.1,
         max_tokens=4000,
         anthropic_api_key=os.getenv("ANTHROPIC_API_KEY")
     )
-    vector_store = get_vector_store()
     
     # Split large diffs
     diff_chunks = split_diff(diff)
@@ -54,11 +54,9 @@ def process_review(diff, repo, pr_id, metadata):
     
     # Process each chunk
     for i, chunk in enumerate(diff_chunks):
-        guidelines = get_relevant_guidelines(chunk, vector_store)
-        
-        # Construct prompt
+        # Construct prompt with guidelines
         prompt = ChatPromptTemplate.from_messages([
-            ("system", """
+            ("system", f"""
             You are an expert code reviewer. Follow these guidelines:
             {guidelines}
             
@@ -71,10 +69,7 @@ def process_review(diff, repo, pr_id, metadata):
         ])
         
         chain = prompt | llm | StrOutputParser()
-        response = chain.invoke({
-            "guidelines": guidelines,
-            "diff_chunk": chunk
-        })
+        response = chain.invoke({"diff_chunk": chunk})
         
         # Parse response
         comments, security = parse_response(response)
@@ -83,13 +78,13 @@ def process_review(diff, repo, pr_id, metadata):
     
     # Generate summary
     summary_prompt = ChatPromptTemplate.from_template(
-        "Generate concise summary of PR #{pr_id} in {repo}:\n\n{all_comments}"
+        "Generate concise summary of PR #{pr_id} in {repo} based on these comments:\n\n{comments}"
     )
     summary_chain = summary_prompt | llm | StrOutputParser()
     summary = summary_chain.invoke({
         "pr_id": pr_id,
         "repo": repo,
-        "all_comments": "\n".join([c['comment'] for c in all_comments])
+        "comments": "\n".join([c['comment'] for c in all_comments])
     })
     
     return {

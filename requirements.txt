@@ -1,8 +1,5 @@
-
 fastapi
 uvicorn
 langchain-anthropic
-langchain
-chromadb
-sentence-transformers
+langchain-core
 python-dotenv
