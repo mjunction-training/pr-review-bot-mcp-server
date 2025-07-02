@@ -1,14 +1,16 @@
 import os
 import re
 import logging
+import requests
 from langchain_core.prompts import ChatPromptTemplate
-from langchain_anthropic import ChatAnthropic
+from langchain_community.llms import HuggingFaceEndpoint
 from langchain_core.output_parsers import StrOutputParser
 
 logger = logging.getLogger(__name__)
 
 MAX_DIFF_LENGTH = 100000  # 100K characters
-CHUNK_SIZE = 6000  # Increased for efficiency
+CHUNK_SIZE = 5000  # Chunk size for processing
+HUGGING_FACE_API_URL = "https://api-inference.huggingface.co/models/"
 
 def load_guidelines():
     """Load guidelines from markdown file"""
@@ -35,17 +37,30 @@ def split_diff(diff):
         chunks.append(current_chunk)
     return chunks
 
+def query_huggingface(payload, model_name, api_token):
+    """Query Hugging Face Inference API"""
+    headers = {"Authorization": f"Bearer {api_token}"}
+    response = requests.post(
+        HUGGING_FACE_API_URL + model_name,
+        headers=headers,
+        json=payload,
+        timeout=60
+    )
+    response.raise_for_status()
+    return response.json()
+
 def process_review(diff, repo, pr_id, metadata):
-    # Load guidelines once
+    # Load guidelines
     guidelines = load_guidelines()
     
-    # Initialize Claude model
-    llm = ChatAnthropic(
-        model="claude-3-sonnet-20240229",
-        temperature=0.1,
-        max_tokens=4000,
-        anthropic_api_key=os.getenv("ANTHROPIC_API_KEY")
-    )
+    # Get Hugging Face API token
+    hf_token = os.getenv("HUGGING_FACE_API_TOKEN")
+    if not hf_token:
+        logger.error("HUGGING_FACE_API_TOKEN not set")
+        raise ValueError("Missing Hugging Face API token")
+    
+    # Choose a free model (small and efficient)
+    model_name = "codellama/CodeLlama-7b-instruct-hf"  # 7B parameter model
     
     # Split large diffs
     diff_chunks = split_diff(diff)
@@ -54,38 +69,60 @@ def process_review(diff, repo, pr_id, metadata):
     
     # Process each chunk
     for i, chunk in enumerate(diff_chunks):
-        # Construct prompt with guidelines
-        prompt = ChatPromptTemplate.from_messages([
-            ("system", f"""
-            You are an expert code reviewer. Follow these guidelines:
-            {guidelines}
-            
-            Review tasks:
-            1. Summarize changes in this diff chunk
-            2. Add line comments (format: FILE:LINE: COMMENT)
-            3. Flag security vulnerabilities (format: SECURITY:FILE:LINE: ISSUE)
-            """),
-            ("human", "Review this code diff:\n\n{diff_chunk}")
-        ])
+        # Construct prompt
+        prompt = f"""<s>[INST] <<SYS>>
+You are an expert code reviewer. Follow these guidelines:
+{guidelines}
+
+Review tasks:
+1. Summarize changes in this diff chunk
+2. Add line comments (format: FILE:LINE: COMMENT)
+3. Flag security vulnerabilities (format: SECURITY:FILE:LINE: ISSUE)
+<</SYS>>
+
+Review this code diff:
+
+{chunk} [/INST]"""
         
-        chain = prompt | llm | StrOutputParser()
-        response = chain.invoke({"diff_chunk": chunk})
+        # Query Hugging Face API
+        payload = {
+            "inputs": prompt,
+            "parameters": {
+                "max_new_tokens": 1000,
+                "temperature": 0.2,
+                "top_p": 0.95,
+                "return_full_text": False
+            }
+        }
+        
+        try:
+            response = query_huggingface(payload, model_name, hf_token)
+            generated_text = response[0]['generated_text']
+        except Exception as e:
+            logger.error(f"Model query failed: {str(e)}")
+            continue
         
         # Parse response
-        comments, security = parse_response(response)
+        comments, security = parse_response(generated_text)
         all_comments.extend(comments)
         security_issues.extend(security)
     
     # Generate summary
-    summary_prompt = ChatPromptTemplate.from_template(
-        "Generate concise summary of PR #{pr_id} in {repo} based on these comments:\n\n{comments}"
-    )
-    summary_chain = summary_prompt | llm | StrOutputParser()
-    summary = summary_chain.invoke({
-        "pr_id": pr_id,
-        "repo": repo,
-        "comments": "\n".join([c['comment'] for c in all_comments])
-    })
+    summary_payload = {
+        "inputs": f"Generate concise summary of PR #{pr_id} in {repo} based on these comments:\n\n" +
+                  "\n".join([c['comment'] for c in all_comments]),
+        "parameters": {
+            "max_new_tokens": 500,
+            "temperature": 0.1
+        }
+    }
+    
+    try:
+        summary_response = query_huggingface(summary_payload, model_name, hf_token)
+        summary = summary_response[0]['generated_text']
+    except Exception as e:
+        logger.error(f"Summary generation failed: {str(e)}")
+        summary = "PR summary could not be generated"
     
     return {
         "summary": summary,

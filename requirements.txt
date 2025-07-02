@@ -1,5 +1,5 @@
-fastapi
-uvicorn
-langchain-anthropic
-langchain-core
-python-dotenv
+fastapi==0.110.0
+uvicorn==0.29.0
+langchain-core==0.1.16
+python-dotenv==1.0.0
+requests==2.31.0
