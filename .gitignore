@@ -1,3 +1,14 @@
+.env
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.DS_Store
+.venv
+env/
+venv/
+chroma_db/
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[codz]
