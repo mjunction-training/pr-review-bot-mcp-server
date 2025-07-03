@@ -15,7 +15,7 @@ HUGGING_FACE_API_URL = "https://api-inference.huggingface.co/models/"
 def load_guidelines():
     """Load guidelines from markdown file"""
     try:
-        with open("guidelines.md.txt", "r") as f:
+        with open("guidelines.md", "r") as f:
             return f.read()
     except Exception as e:
         logger.error(f"Failed to load guidelines: {str(e)}")
