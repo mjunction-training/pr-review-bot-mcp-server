@@ -44,7 +44,7 @@ def query_huggingface(payload, model_name, api_token):
         HUGGING_FACE_API_URL + model_name,
         headers=headers,
         json=payload,
-        timeout=60
+        timeout=120
     )
     response.raise_for_status()
     return response.json()
