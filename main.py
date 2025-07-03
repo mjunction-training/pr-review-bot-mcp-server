@@ -52,7 +52,7 @@ def health_check():
     
     # Check guidelines file
     try:
-        with open("guidelines.md.txt", "r") as f:
+        with open("guidelines.md", "r") as f:
             content = f.read(100)
             status["services"]["guidelines"] = "available" if content else "empty"
     except:
