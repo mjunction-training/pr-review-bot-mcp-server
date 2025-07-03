@@ -1,5 +1,6 @@
 import os
 import requests
+import uvicorn
 import logging
 from fastapi import FastAPI, HTTPException
 from review_processor import process_review
@@ -24,9 +25,6 @@ async def review_pr(payload: dict):
     except Exception as e:
         logging.error(f"Review failed: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
-
-app = FastAPI()
-logging.basicConfig(level=logging.INFO)
 
 @app.get("/health")
 def health_check():
@@ -63,6 +61,5 @@ def health_check():
     return status
 
 if __name__ == "__main__":
-    import uvicorn
-    port = int(os.getenv("PORT", 8000))
+    port = int(os.getenv("PORT", 8080))
     uvicorn.run(app, host="0.0.0.0", port=port)
