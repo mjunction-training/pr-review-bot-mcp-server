@@ -61,7 +61,8 @@ def process_review(diff, repo, pr_id, metadata):
     
     # Choose a free model (small and efficient)
     # model_name = "codellama/CodeLlama-7b-instruct-hf"  # 7B parameter model
-    model_name = "mistralai/Mistral-7B-Instruct-v0.2"  # <--- Change this line
+    # model_name = "mistralai/Mistral-7B-Instruct-v0.2"  # <--- Change this line
+    model_name = "google/gemma-2b-it"
     
     # Split large diffs
     diff_chunks = split_diff(diff)
