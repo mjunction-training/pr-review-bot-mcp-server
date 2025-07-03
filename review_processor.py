@@ -50,16 +50,86 @@ def query_huggingface(payload, model_name, api_token):
     return response.json()
 
 def process_review(diff, repo, pr_id, metadata):
-    """
-    Mocks the PR review process to return a generic comment.
-    """
-    logger.info(f"MOCKING: Processing review for PR #{pr_id} in {repo}")
+    # Load guidelines
+    guidelines = load_guidelines()
     
-    # Return a generic, mocked response
+    # Get Hugging Face API token
+    hf_token = os.getenv("HUGGING_FACE_API_TOKEN")
+    if not hf_token:
+        logger.error("HUGGING_FACE_API_TOKEN not set")
+        raise ValueError("Missing Hugging Face API token")
+    
+    # Choose a free model (small and efficient)
+    # model_name = "codellama/CodeLlama-7b-instruct-hf"  # 7B parameter model
+    # model_name = "mistralai/Mistral-7B-Instruct-v0.2"  # <--- Change this line
+    model_name = "google/gemma-2b-it"
+    
+    # Split large diffs
+    diff_chunks = split_diff(diff)
+    all_comments = []
+    security_issues = []
+    
+    # Process each chunk
+    for i, chunk in enumerate(diff_chunks):
+        # Construct prompt
+        prompt = f"""<s>[INST] <<SYS>>
+You are an expert code reviewer. Follow these guidelines:
+{guidelines}
+
+Review tasks:
+1. Summarize changes in this diff chunk
+2. Add line comments (format: FILE:LINE: COMMENT)
+3. Flag security vulnerabilities (format: SECURITY:FILE:LINE: ISSUE)
+<</SYS>>
+
+Review this code diff:
+
+{chunk} [/INST]"""
+        
+        # Query Hugging Face API
+        payload = {
+            "inputs": prompt,
+            "parameters": {
+                "max_new_tokens": 1000,
+                "temperature": 0.2,
+                "top_p": 0.95,
+                "return_full_text": False
+            }
+        }
+        
+        try:
+            # response = query_huggingface(payload, model_name, hf_token)
+            generated_text = "This is a mock summary from MCP server!" # response[0]['generated_text']
+        except Exception as e:
+            logger.error(f"Model query failed: {str(e)}")
+            continue
+        
+        # Parse response
+        comments, security = parse_response(generated_text)
+        all_comments.extend(comments)
+        security_issues.extend(security)
+    
+    # Generate summary
+    summary_payload = {
+        "inputs": f"Generate concise summary of PR #{pr_id} in {repo} based on these comments:\n\n" +
+                  "\n".join([c['comment'] for c in all_comments]),
+        "parameters": {
+            "max_new_tokens": 500,
+            "temperature": 0.1
+        }
+    }
+    
+    try:
+        # summary_response = query_huggingface(summary_payload, model_name, hf_token)
+        summary = "This is a mock summary from MCP server!"
+    except Exception as e:
+        logger.error(f"Summary generation failed: {str(e)}")
+        summary = "PR summary could not be generated"
+    
     return {
-        "summary": "This PR IS Reviewed By - PR BOT - Response Came From MCP Server!!",
-        "comments": [], # No specific line comments in mock
-        "security_issues": [] # No security issues in mock
+        "summary": summary,
+        "comments": all_comments,
+        "security_issues": security_issues
     }
 
 def parse_response(response):
