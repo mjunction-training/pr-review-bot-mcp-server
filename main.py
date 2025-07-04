@@ -1,42 +1,95 @@
 import os
 import requests
-import uvicorn
 import logging
-from fastapi import FastAPI, HTTPException
-from review_processor import process_review
+from review_processor import ReviewProcessor
+from pydantic import BaseModel
+from typing import List, Dict, Any
+from fastmcp import FastMCP
+from starlette.requests import Request
+from starlette.responses import PlainTextResponse
+import json
 
-app = FastAPI()
+
 logging.basicConfig(level=logging.INFO)
 
-@app.post("/review")
-async def review_pr(payload: dict):
-    try:
-        result = process_review(
-            diff=payload['diff'],
-            repo=payload['repo'],
-            pr_id=payload['pr_id'],
-            metadata=payload.get('metadata', {})
-        )
-        return {
-            "summary": result["summary"],
-            "comments": result["comments"],
-            "security_issues": result["security_issues"]
-        }
-    except Exception as e:
-        logging.error(f"Review failed: {str(e)}")
-        raise HTTPException(status_code=500, detail=str(e))
+class ReviewInput(BaseModel):
+    """Schema for the input payload to the PR review model."""
+    diff: str
+    repo: str
+    pr_id: int
+    metadata: Dict[str, Any]
+    review_prompt_content: str
+    summary_prompt_content: str
 
-@app.get("/health")
-def health_check():
-    """Comprehensive health check"""
+class Comment(BaseModel):
+    """Schema for a single line comment."""
+    file: str
+    line: int
+    comment: str
+
+class SecurityIssue(BaseModel):
+    """Schema for a single security issue."""
+    file: str
+    line: int
+    issue: str
+
+class ReviewOutput(BaseModel):
+    """Schema for the output payload from the PR review model."""
+    summary: str
+    comments: List[Comment]
+    security_issues: List[SecurityIssue]
+
+# Initialize FastMCP server
+mcp = FastMCP(name="PR Review MCP Server")
+
+review_processor_instance = ReviewProcessor()
+
+# Define the handler function as a FastMCP tool
+@mcp.tool(name="pr_review_model")
+async def pr_review_handler(input_data: ReviewInput) -> ReviewOutput:
+    """
+    Handler function for the PR review model exposed via FastMCP.
+    It takes a ReviewInput object and returns a ReviewOutput object.
+    """
+    try:
+        comments_data, summary, security_issues_data = await review_processor_instance.process_review(
+            diff=input_data.diff,
+            repo=input_data.repo,
+            pr_id=input_data.pr_id,
+            metadata=input_data.metadata,
+            review_prompt_content=input_data.review_prompt_content,
+            summary_prompt_content=input_data.summary_prompt_content
+        )
+        
+        comments = [Comment(**c) for c in comments_data]
+        security_issues = [SecurityIssue(**s) for s in security_issues_data]
+
+        return ReviewOutput(
+            summary=summary,
+            comments=comments,
+            security_issues=security_issues
+        )
+    except requests.exceptions.RequestException as e:
+        logging.error(f"Hugging Face API request failed: {e}")
+        # FastMCP tools handle exceptions. Re-raising a generic RuntimeError for the tool.
+        raise RuntimeError(f"External service error: {e}")
+    except Exception as e:
+        logging.error(f"Error processing review request: {e}")
+        raise RuntimeError(f"Internal server error: {e}")
+
+# Define the health check endpoint using FastMCP's custom_route
+@mcp.custom_route("/health", methods=["GET"])
+async def health_check_mcp(request: Request) -> PlainTextResponse:
+    """
+    Health check endpoint for the MCP server.
+    """
     status = {
         "status": "ok",
         "services": {}
     }
-    
-    # Check Hugging Face API
+
+    hf_token = os.getenv("HUGGING_FACE_API_TOKEN")
     try:
-        hf_token = os.getenv("HUGGING_FACE_API_TOKEN")
         if hf_token:
             headers = {"Authorization": f"Bearer {hf_token}"}
             response = requests.get(
@@ -47,19 +100,29 @@ def health_check():
             status["services"]["hugging_face"] = "reachable" if response.ok else "unreachable"
         else:
             status["services"]["hugging_face"] = "no_token"
-    except:
+    except requests.exceptions.RequestException as e:
+        logging.error(f"Hugging Face API check failed: {e}")
+        status["services"]["hugging_face"] = "error"
+    except Exception as e:
+        logging.error(f"Unexpected error during Hugging Face API health check: {e}")
         status["services"]["hugging_face"] = "error"
     
-    # Check guidelines file
     try:
         with open("guidelines.md", "r") as f:
             content = f.read(100)
             status["services"]["guidelines"] = "available" if content else "empty"
-    except:
+    except FileNotFoundError:
+        logging.error("guidelines.md not found.")
         status["services"]["guidelines"] = "missing"
+    except Exception as e:
+        logging.error(f"Error checking guidelines.md: {e}")
+        status["services"]["guidelines"] = "error"
     
-    return status
+    # Return a PlainTextResponse with JSON content for custom routes
+    return PlainTextResponse(json.dumps(status), media_type="application/json")
+
 
 if __name__ == "__main__":
     port = int(os.getenv("PORT", 8080))
-    uvicorn.run(app, host="0.0.0.0", port=port)
+    # Use mcp.run() to start the FastMCP server
+    mcp.run(host="0.0.0.0", port=port)
