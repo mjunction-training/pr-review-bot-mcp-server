@@ -78,7 +78,13 @@ async def pr_review_handler(input_data: ReviewInput) -> ReviewOutput:
         raise RuntimeError(f"Internal server error: {e}")
 
 # Define the health check endpoint using FastMCP's custom_route
-@mcp.custom_route("/health", methods=["GET"])
+@mcp.resource(
+    uri="data://health",      # Explicit URI (required)
+    name="ApplicationStatus",     # Custom name
+    description="Provides the current status of the application.", # Custom description
+    mime_type="application/json", # Explicit MIME type
+    tags={"monitoring", "status"} # Categorization tags
+)
 async def health_check_mcp() -> dict:
     """
     Health check endpoint for the MCP server.
