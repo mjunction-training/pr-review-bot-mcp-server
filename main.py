@@ -125,4 +125,4 @@ async def health_check_mcp(request: Request) -> PlainTextResponse:
 if __name__ == "__main__":
     port = int(os.getenv("PORT", 8080))
     # Use mcp.run() to start the FastMCP server
-    mcp.run(host="0.0.0.0", port=port)
+    mcp.run(transport="http", port=port)
