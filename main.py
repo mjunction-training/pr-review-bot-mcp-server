@@ -40,7 +40,7 @@ class ReviewOutput(BaseModel):
     security_issues: List[SecurityIssue]
 
 # Initialize FastMCP server
-mcp = FastMCP(name="PR Review MCP Server")
+mcp = FastMCP(name="PR Review MCP Server", host="0.0.0.0")
 
 review_processor_instance = ReviewProcessor()
 
@@ -125,4 +125,4 @@ async def health_check_mcp(request: Request) -> PlainTextResponse:
 if __name__ == "__main__":
     port = int(os.getenv("PORT", 8080))
     # Use mcp.run() to start the FastMCP server
-    mcp.run(transport="http", port=port)
+    mcp.run(transport="http", port=port, path="/")
