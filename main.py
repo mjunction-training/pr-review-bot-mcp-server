@@ -120,7 +120,7 @@ async def health_check_mcp(request: Request) -> Response:
         status["services"]["guidelines"] = "error"
     
     # Return a PlainTextResponse with JSON content for custom routes
-    return JSONResponse(json.dumps(status), media_type="application/json")
+    return JSONResponse(status, media_type="application/json")
 
 
 if __name__ == "__main__":
