@@ -12,10 +12,6 @@ logger = logging.getLogger(__name__)
 MAX_DIFF_LENGTH = 100000  # 100K characters
 CHUNK_SIZE = 5000  # Chunk size for processing
 HUGGING_FACE_API_URL = "https://api-inference.huggingface.co/models/"
-HUGGING_FACE_API_TOKEN = os.getenv("HUGGING_FACE_API_TOKEN")
-if not HUGGING_FACE_API_TOKEN:
-    logging.error("HUGGING_FACE_API_TOKEN environment variable not set. Exiting.")
-    exit(1)
 
 class ReviewProcessor:
     def __init__(self):
@@ -49,7 +45,7 @@ class ReviewProcessor:
             HUGGING_FACE_API_URL + model_name,
             headers=headers,
             json=payload,
-            timeout=120
+            timeout=500
         )
         response.raise_for_status()
         return response.json()

@@ -108,17 +108,6 @@ async def health_check_mcp(request: Request) -> Response:
         logging.error(f"Unexpected error during Hugging Face API health check: {e}")
         status["services"]["hugging_face"] = "error"
     
-    try:
-        with open("guidelines.md", "r") as f:
-            content = f.read(100)
-            status["services"]["guidelines"] = "available" if content else "empty"
-    except FileNotFoundError:
-        logging.error("guidelines.md not found.")
-        status["services"]["guidelines"] = "missing"
-    except Exception as e:
-        logging.error(f"Error checking guidelines.md: {e}")
-        status["services"]["guidelines"] = "error"
-    
     # Return a PlainTextResponse with JSON content for custom routes
     return JSONResponse(status, media_type="application/json")
 
