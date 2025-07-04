@@ -6,7 +6,8 @@ from pydantic import BaseModel
 from typing import List, Dict, Any
 from fastmcp import FastMCP
 from starlette.requests import Request
-from starlette.responses import PlainTextResponse
+from starlette.responses import Response
+from starlette.responses import JSONResponse
 import json
 
 
@@ -78,14 +79,8 @@ async def pr_review_handler(input_data: ReviewInput) -> ReviewOutput:
         raise RuntimeError(f"Internal server error: {e}")
 
 # Define the health check endpoint using FastMCP's custom_route
-@mcp.resource(
-    uri="data://health",      # Explicit URI (required)
-    name="ApplicationStatus",     # Custom name
-    description="Provides the current status of the application.", # Custom description
-    mime_type="application/json", # Explicit MIME type
-    tags={"monitoring", "status"} # Categorization tags
-)
-async def health_check_mcp() -> dict:
+@mcp.custom_route("/health", methods=["GET"])
+async def health_check_mcp(request: Request) -> Response:
     """
     Health check endpoint for the MCP server.
     """
@@ -125,7 +120,7 @@ async def health_check_mcp() -> dict:
         status["services"]["guidelines"] = "error"
     
     # Return a PlainTextResponse with JSON content for custom routes
-    return PlainTextResponse(json.dumps(status), media_type="application/json")
+    return JSONResponse(json.dumps(status), media_type="application/json")
 
 
 if __name__ == "__main__":
