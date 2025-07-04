@@ -85,6 +85,7 @@ async def pr_review_handler(input_data: ReviewInput) -> ReviewOutput:
     mime_type="application/json", # Explicit MIME type
     tags={"monitoring", "status", "health", "healthcheck"} # Categorization tags
 )
+@mcp.custom_route("/health", methods=["GET"])
 async def health_check_mcp() -> dict:
     """
     Health check endpoint for the MCP server.
