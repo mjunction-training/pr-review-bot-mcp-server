@@ -8,8 +8,6 @@ from fastmcp import FastMCP
 from starlette.requests import Request
 from starlette.responses import Response
 from starlette.responses import JSONResponse
-import json
-
 
 logging.basicConfig(level=logging.DEBUG)
 
@@ -71,7 +69,7 @@ async def pr_review_handler(input_data: ReviewInput) -> ReviewOutput:
             security_issues=security_issues
         )
 
-        return JSONResponse(content=response_model.model_dump())
+        return response_model.model_dump()
     except requests.exceptions.RequestException as e:
         logging.error(f"Hugging Face API request failed: {e}")
         # FastMCP tools handle exceptions. Re-raising a generic RuntimeError for the tool.
