@@ -1,13 +1,14 @@
-import os
-import requests
 import logging
-from review_processor import ReviewProcessor
-from pydantic import BaseModel
+import os
 from typing import List, Dict, Any
+
+import requests
 from fastmcp import FastMCP
-from starlette.requests import Request
-from starlette.responses import Response
+from pydantic import BaseModel
 from starlette.responses import JSONResponse
+from starlette.responses import Response
+
+from review_processor import ReviewProcessor
 
 logging.basicConfig(level=logging.DEBUG)
 
@@ -80,7 +81,7 @@ async def pr_review_handler(input_data: ReviewInput) -> ReviewOutput:
 
 # Define the health check endpoint using FastMCP's custom_route
 @mcp.custom_route("/health", methods=["GET"])
-async def health_check_mcp(request: Request) -> Response:
+async def health_check_mcp() -> Response:
     """
     Health check endpoint for the MCP server.
     """
