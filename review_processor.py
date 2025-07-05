@@ -1,11 +1,11 @@
-import logging
 import os
 import re
-from typing import List, Dict
-
+import logging
 import requests
-from langchain_core.output_parsers import StrOutputParser
 from langchain_core.prompts import ChatPromptTemplate
+from langchain_core.output_parsers import StrOutputParser
+from typing import List, Dict, Any
+
 
 logger = logging.getLogger(__name__)
 
@@ -90,7 +90,7 @@ class ReviewProcessor:
         
         return comments, security_issues
 
-    async def process_review(self, diff: str, repo: str, pr_id: int, review_prompt_content: str, summary_prompt_content: str) -> tuple[List[Dict], str, List[Dict]]:
+    async def process_review(self, diff: str, repo: str, pr_id: int, metadata: Dict[str, Any], review_prompt_content: str, summary_prompt_content: str) -> tuple[List[Dict], str, List[Dict]]:
         """
         Process a PR review by chunking the diff, querying Hugging Face,
         and extracting structured comments and a summary.
