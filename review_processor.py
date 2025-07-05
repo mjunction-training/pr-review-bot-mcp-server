@@ -107,11 +107,11 @@ class ReviewProcessor:
         
         for i, chunk in enumerate(diff_chunks):
             logger.info(f"Reviewing chunk {i+1}/{len(diff_chunks)} for PR #{pr_id}.")
-            
+            logger.info(f"Querying Hugging Face Inference API. {review_prompt_content}, {chunk}")
             review_prompt = ChatPromptTemplate.from_messages(
                 [
-                    ("system", review_prompt_content.replace("{", "{{").replace("}", "}}")), # review_prompt_content is already formatted
-                    ("human", chunk) # The actual diff chunk goes here
+                    ("system", review_prompt_content),
+                    ("human", chunk)
                 ]
             )
             
@@ -149,7 +149,7 @@ class ReviewProcessor:
         
         summary_prompt = ChatPromptTemplate.from_messages(
             [
-                ("human", final_summary_prompt_text.replace("{", "{{").replace("}", "}}")) # Pass the fully formatted string
+                ("human", final_summary_prompt_text) # Pass the fully formatted string
             ]
         )
         
