@@ -97,7 +97,7 @@ class ReviewProcessor:
         """
         all_comments = []
         all_security_issues = []
-        
+
         diff_chunks = self.split_diff(diff)
         logger.info(f"Processing PR #{pr_id} from {repo}. Diff split into {len(diff_chunks)} chunks.")
 
@@ -110,7 +110,7 @@ class ReviewProcessor:
             
             review_prompt = ChatPromptTemplate.from_messages(
                 [
-                    ("system", review_prompt_content), # review_prompt_content is already formatted
+                    ("system", review_prompt_content.replace("{", "{{").replace("}", "}}")), # review_prompt_content is already formatted
                     ("human", chunk) # The actual diff chunk goes here
                 ]
             )
@@ -149,7 +149,7 @@ class ReviewProcessor:
         
         summary_prompt = ChatPromptTemplate.from_messages(
             [
-                ("human", final_summary_prompt_text) # Pass the fully formatted string
+                ("human", final_summary_prompt_text.replace("{", "{{").replace("}", "}}")) # Pass the fully formatted string
             ]
         )
         
