@@ -59,36 +59,32 @@ class ReviewProcessor:
         
         for line in lines:
             line = line.strip()
-            if line.startswith("SECURITY:"):
-                parts = line.split(':', 3)
-                if len(parts) >= 4:
-                    try:
-                        security_issues.append({
-                            "file": parts[1].strip(),
-                            "line": int(parts[2].strip()),
-                            "issue": parts[3].strip()
-                        })
-                    except ValueError:
-                        logger.warning(f"Could not parse security issue line: {line}")
-                else:
-                    logger.warning(f"Malformed security issue line: {line}")
-            elif ':' in line and line.count(':') >= 2:
-                parts = line.split(':', 2)
-                if len(parts) == 3:
-                    file_part, line_part, comment = parts
-                    if file_part.strip() and line_part.strip().isdigit():
-                        try:
-                            comments.append({
-                                "file": file_part.strip(),
-                                "line": int(line_part.strip()),
-                                "comment": comment.strip()
-                            })
-                        except ValueError:
-                            logger.warning(f"Could not parse comment line: {line}")
-                    else:
-                        logger.warning(f"Malformed comment line (file or line missing/invalid): {line}")
-                else:
-                    logger.warning(f"Malformed comment line (incorrect number of colons): {line}")
+            # Updated regex to correctly capture file, line, and the full comment/issue text
+            security_match = re.match(r"SECURITY:([^:]+):(\d+):(.+)", line)
+            comment_match = re.match(r"([^:]+):(\d+):(.+)", line)
+
+            if security_match:
+                try:
+                    file, line_num, issue = security_match.groups()
+                    security_issues.append({
+                        "file": file.strip(),
+                        "line": int(line_num.strip()),
+                        "issue": issue.strip()
+                    })
+                except ValueError:
+                    logger.warning(f"Could not parse security issue line: {line}")
+            elif comment_match:
+                try:
+                    file, line_num, comment = comment_match.groups()
+                    comments.append({
+                        "file": file.strip(),
+                        "line": int(line_num.strip()),
+                        "comment": comment.strip()
+                    })
+                except ValueError:
+                    logger.warning(f"Could not parse comment line: {line}")
+            else:
+                logger.warning(f"Line did not match expected comment or security issue format: {line}")
         
         return comments, security_issues
 
@@ -103,19 +99,23 @@ class ReviewProcessor:
         diff_chunks = self.split_diff(diff)
         logger.info(f"Processing PR #{pr_id} from {repo}. Diff split into {len(diff_chunks)} chunks.")
 
+        # Note: The review_prompt_content from mcp_client.py now contains the full system message.
+        # The human message for this prompt is the 'chunk' itself.
+        # No need to format review_prompt_content here with guidelines or diff_chunk as it's already a full string.
+        
         for i, chunk in enumerate(diff_chunks):
             logger.info(f"Reviewing chunk {i+1}/{len(diff_chunks)} for PR #{pr_id}.")
             
             review_prompt = ChatPromptTemplate.from_messages(
                 [
-                    ("system", review_prompt_content),
-                    ("human", chunk)
+                    ("system", review_prompt_content), # review_prompt_content is already formatted
+                    ("human", chunk) # The actual diff chunk goes here
                 ]
             )
             
             review_response = self.query_huggingface(
                 payload={
-                    "inputs": self.parser.parse(review_prompt.format_messages(guidelines="", diff_chunk=chunk)[0].content)
+                    "inputs": self.parser.parse(review_prompt.format_messages()[0].content) # No extra args needed as review_prompt is fully formed
                 },
                 model_name=os.getenv("HUGGING_FACE_REVIEW_MODEL", "meta-llama/Meta-Llama-3-8B-Instruct")
             )
@@ -130,20 +130,30 @@ class ReviewProcessor:
             else:
                 logger.warning(f"No valid review response for chunk {i+1} of PR #{pr_id}.")
 
-        comments_text = "\\n".join([c["comment"] for c in all_comments])
-        security_issues_text = "\\n".join([s["issue"] for s in all_security_issues])
+        comments_text = "\n".join([c["comment"] for c in all_comments])
+        security_issues_text = "\n".join([s["issue"] for s in all_security_issues])
         
-        full_comments_for_summary = f"Comments:\\n{comments_text}\\nSecurity Issues:\\n{security_issues_text}"
+        # IMPORTANT CHANGE: Construct the full summary prompt text before creating ChatPromptTemplate
+        final_summary_prompt_text = f"""
+            {summary_prompt_content}
+
+            <comments_and_security_issues>
+            Comments:
+            {comments_text}
+            Security Issues:
+            {security_issues_text}
+            </comments_and_security_issues>
+            """
         
         summary_prompt = ChatPromptTemplate.from_messages(
             [
-                ("human", summary_prompt_content)
+                ("human", final_summary_prompt_text) # Pass the fully formatted string
             ]
         )
         
         summary_response = self.query_huggingface(
             payload={
-                "inputs": self.parser.parse(summary_prompt.format_messages(comments_text=full_comments_for_summary)[0].content)
+                "inputs": self.parser.parse(summary_prompt.format_messages()[0].content) # No args needed, prompt is full
             },
             model_name=os.getenv("HUGGING_FACE_SUMMARY_MODEL", "meta-llama/Meta-Llama-3-8B-Instruct")
         )
