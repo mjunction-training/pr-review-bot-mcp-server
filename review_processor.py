@@ -1,11 +1,11 @@
+import logging
 import os
 import re
-import logging
-import requests
-from langchain_core.prompts import ChatPromptTemplate
-from langchain_core.output_parsers import StrOutputParser
-from typing import List, Dict, Any
+from typing import List, Dict
 
+import requests
+from langchain_core.output_parsers import StrOutputParser
+from langchain_core.prompts import ChatPromptTemplate
 
 logger = logging.getLogger(__name__)
 
@@ -22,7 +22,8 @@ class ReviewProcessor:
             logging.error("HUGGING_FACE_API_TOKEN environment variable not set. Exiting.")
             raise ValueError("Missing Hugging Face API token")
 
-    def split_diff(self, diff: str) -> List[str]:
+    @staticmethod
+    def split_diff(diff: str) -> List[str]:
         """Split large diffs into manageable chunks"""
         if len(diff) <= MAX_DIFF_LENGTH:
             return [diff]
@@ -50,7 +51,8 @@ class ReviewProcessor:
         response.raise_for_status()
         return response.json()
 
-    def parse_review_output(self, text: str) -> tuple[List[Dict], List[Dict]]:
+    @staticmethod
+    def parse_review_output(text: str) -> tuple[List[Dict], List[Dict]]:
         """Parse raw text output into structured comments and security issues."""
         comments = []
         security_issues = []
@@ -88,7 +90,7 @@ class ReviewProcessor:
         
         return comments, security_issues
 
-    async def process_review(self, diff: str, repo: str, pr_id: int, metadata: Dict[str, Any], review_prompt_content: str, summary_prompt_content: str) -> tuple[List[Dict], str, List[Dict]]:
+    async def process_review(self, diff: str, repo: str, pr_id: int, review_prompt_content: str, summary_prompt_content: str) -> tuple[List[Dict], str, List[Dict]]:
         """
         Process a PR review by chunking the diff, querying Hugging Face,
         and extracting structured comments and a summary.
