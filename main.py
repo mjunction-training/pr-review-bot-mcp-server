@@ -11,7 +11,7 @@ from starlette.responses import JSONResponse
 import json
 
 
-logging.basicConfig(level=logging.INFO)
+logging.basicConfig(level=logging.DEBUG)
 
 class ReviewInput(BaseModel):
     """Schema for the input payload to the PR review model."""
@@ -65,11 +65,13 @@ async def pr_review_handler(input_data: ReviewInput) -> ReviewOutput:
         comments = [Comment(**c) for c in comments_data]
         security_issues = [SecurityIssue(**s) for s in security_issues_data]
 
-        return ReviewOutput(
+        response_model = ReviewOutput( #
             summary=summary,
             comments=comments,
             security_issues=security_issues
         )
+
+        return JSONResponse(content=response_model.model_dump())
     except requests.exceptions.RequestException as e:
         logging.error(f"Hugging Face API request failed: {e}")
         # FastMCP tools handle exceptions. Re-raising a generic RuntimeError for the tool.
