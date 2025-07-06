@@ -107,7 +107,7 @@ class ReviewProcessor:
         
         for i, chunk in enumerate(diff_chunks):
             logger.info(f"Reviewing chunk {i+1}/{len(diff_chunks)} for PR #{pr_id}.")
-            logger.info(f"Querying Hugging Face Inference API. {review_prompt_content}, {chunk}")
+            #logger.info(f"Querying Hugging Face Inference API. {review_prompt_content}, {chunk}")
             review_prompt = ChatPromptTemplate.from_messages(
                 [
                     ("system", review_prompt_content),
