@@ -5,6 +5,7 @@ from typing import Dict, Any
 import requests
 from fastmcp import FastMCP
 from pydantic import BaseModel
+from requests import Request
 from starlette.responses import JSONResponse, Response
 
 from review_processor import ReviewProcessor
@@ -51,8 +52,8 @@ async def llm_invoke_handler(input_data: LLMInvokeInput) -> LLMInvokeOutput:
 
 
 @mcp.custom_route("/health", methods=["GET"])
-async def health_check_mcp() -> Response:
-    logging.info("Received MCP health check request.")
+async def health_check_mcp(request: Request) -> Response:
+    logging.info(f"Received MCP health check request {request}")
     status = {
         "status": "ok",
         "services": {}
