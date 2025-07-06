@@ -1,119 +1,98 @@
 import logging
 import os
-from typing import List, Dict, Any
+from typing import Dict, Any
 
 import requests
 from fastmcp import FastMCP
 from pydantic import BaseModel
-from starlette.responses import JSONResponse
-from starlette.responses import Response
+from starlette.responses import JSONResponse, Response
 
 from review_processor import ReviewProcessor
 
-logging.basicConfig(level=logging.DEBUG)
+if not logging.root.handlers:
+    log_level = os.getenv("LOG_LEVEL", "INFO").upper()
+    numeric_log_level = getattr(logging, log_level, None)
+    if not isinstance(numeric_log_level, int):
+        numeric_log_level = logging.INFO
+        logging.warning(f"Invalid LOG_LEVEL '{log_level}' provided. Defaulting to INFO.")
+    logging.basicConfig(level=numeric_log_level, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+    logging.info(f"FastMCP server logging configured with level: {logging.getLevelName(numeric_log_level)}")
 
-class ReviewInput(BaseModel):
-    """Schema for the input payload to the PR review model."""
-    diff: str
-    repo: str
-    pr_id: int
-    metadata: Dict[str, Any]
-    review_prompt_content: str
-    summary_prompt_content: str
 
-class Comment(BaseModel):
-    """Schema for a single line comment."""
-    file: str
-    line: int
-    comment: str
+class LLMInvokeInput(BaseModel):
+    model_name: str
+    inputs: str
 
-class SecurityIssue(BaseModel):
-    """Schema for a single security issue."""
-    file: str
-    line: int
-    issue: str
+class LLMInvokeOutput(BaseModel):
+    response_data: Dict[str, Any]
 
-class ReviewOutput(BaseModel):
-    """Schema for the output payload from the PR review model."""
-    summary: str
-    comments: List[Comment]
-    security_issues: List[SecurityIssue]
-
-# Initialize FastMCP server
 mcp = FastMCP(name="PR Review MCP Server", host="0.0.0.0")
 
 review_processor_instance = ReviewProcessor()
+logging.info("ReviewProcessor instance initialized in main.py.")
 
-# Define the handler function as a FastMCP tool
-@mcp.tool(name="pr_review_model")
-async def pr_review_handler(input_data: ReviewInput) -> ReviewOutput:
-    """
-    Handler function for the PR review model exposed via FastMCP.
-    It takes a ReviewInput object and returns a ReviewOutput object.
-    """
+
+@mcp.tool(name="llm_invoke_model")
+async def llm_invoke_handler(input_data: LLMInvokeInput) -> LLMInvokeOutput:
+    logging.info(f"Received LLM invocation request for model: {input_data.model_name}")
+    logging.debug(f"LLM invocation payload inputs (first 200 chars): {input_data.inputs[:200]}...")
     try:
-        comments_data, summary, security_issues_data = await review_processor_instance.process_review_no_chunk(
-            diff=input_data.diff,
-            repo=input_data.repo,
-            pr_id=input_data.pr_id,
-            metadata=input_data.metadata,
-            review_prompt_content=input_data.review_prompt_content,
-            summary_prompt_content=input_data.summary_prompt_content
+        raw_llm_response = review_processor_instance.invoke_llm_model(
+            payload={"inputs": input_data.inputs},
+            model_name=input_data.model_name
         )
-        
-        comments = [Comment(**c) for c in comments_data]
-        security_issues = [SecurityIssue(**s) for s in security_issues_data]
-
-        response_model = ReviewOutput( #
-            summary=summary,
-            comments=comments,
-            security_issues=security_issues
-        )
-
-        return response_model.model_dump()
-    except requests.exceptions.RequestException as e:
-        logging.error(f"Hugging Face API request failed: {e}")
-        # FastMCP tools handle exceptions. Re-raising a generic RuntimeError for the tool.
-        raise RuntimeError(f"External service error: {e}")
+        logging.info(f"Successfully invoked LLM model: {input_data.model_name}")
+        logging.debug(f"Raw LLM response: {raw_llm_response}")
+        return LLMInvokeOutput(response_data=raw_llm_response)
     except Exception as e:
-        logging.error(f"Error processing review request: {e}")
+        logging.error(f"Error during LLM invocation in handler for model {input_data.model_name}: {e}", exc_info=True)
         raise RuntimeError(f"Internal server error: {e}")
 
-# Define the health check endpoint using FastMCP's custom_route
+
 @mcp.custom_route("/health", methods=["GET"])
 async def health_check_mcp() -> Response:
-    """
-    Health check endpoint for the MCP server.
-    """
+    logging.info("Received MCP health check request.")
     status = {
         "status": "ok",
         "services": {}
     }
 
-    hf_token = os.getenv("HUGGING_FACE_API_TOKEN")
+    llm_api_token = os.getenv("LLM_API_TOKEN")
+    llm_api_base_url = os.getenv("LLM_API_BASE_URL")
+
+    llm_api_health_check_timeout = int(os.getenv("LLM_API_HEALTH_CHECK_TIMEOUT", 3))
+
     try:
-        if hf_token:
-            headers = {"Authorization": f"Bearer {hf_token}"}
+        if llm_api_token and llm_api_base_url:
+            headers = {"Authorization": f"Bearer {llm_api_token}"}
+            test_url = f"{llm_api_base_url.rstrip('/')}/"
+            logging.debug(
+                f"Attempting LLM API connectivity check to: {test_url} with timeout {llm_api_health_check_timeout}s")
             response = requests.get(
-                "https://huggingface.co/api/whoami-v2",
+                test_url,
                 headers=headers,
-                timeout=3
+                timeout=llm_api_health_check_timeout
             )
-            status["services"]["hugging_face"] = "reachable" if response.ok else "unreachable"
+            status["services"][
+                "llm_api"] = "reachable" if response.ok else f"unreachable (status: {response.status_code})"
+            logging.info(f"LLM API connectivity check status: {status['services']['llm_api']}")
+            logging.debug(f"LLM API health check raw response status: {response.status_code}, text: {response.text}")
         else:
-            status["services"]["hugging_face"] = "no_token"
+            status["services"]["llm_api"] = "not_configured"
+            logging.warning("LLM_API_TOKEN or LLM_API_BASE_URL not configured for health check.")
     except requests.exceptions.RequestException as e:
-        logging.error(f"Hugging Face API check failed: {e}")
-        status["services"]["hugging_face"] = "error"
+        logging.error(f"LLM API health check failed: {e}", exc_info=True)
+        status["services"]["llm_api"] = f"unreachable (error: {e})"
     except Exception as e:
-        logging.error(f"Unexpected error during Hugging Face API health check: {e}")
-        status["services"]["hugging_face"] = "error"
-    
-    # Return a PlainTextResponse with JSON content for custom routes
+        logging.error(f"Unexpected error during LLM API health check: {e}", exc_info=True)
+        status["services"]["llm_api"] = f"unreachable (unexpected error: {e})"
+
+    logging.info(f"Returning MCP health check status: {status['status']}")
+    logging.debug(f"Full MCP health check response: {status}")
     return JSONResponse(status, media_type="application/json")
 
 
 if __name__ == "__main__":
     port = int(os.getenv("PORT", 8080))
-    # Use mcp.run() to start the FastMCP server
-    mcp.run(transport="http", port=port, path="/mcp")
+    logging.info(f"Starting FastMCP server on host 0.0.0.0, port {port}")
+    mcp.run(port=port)
