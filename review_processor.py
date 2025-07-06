@@ -2,6 +2,7 @@ import os
 import logging
 import requests
 from typing import Dict
+
 from tenacity import retry, stop_after_attempt, wait_fixed, retry_if_exception_type
 
 logger = logging.getLogger(__name__)
