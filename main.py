@@ -26,7 +26,8 @@ class LLMInvokeInput(BaseModel):
 class LLMInvokeOutput(BaseModel):
     response_data: Dict[str, Any]
 
-mcp = FastMCP(name="PR Review MCP Server", host="0.0.0.0")
+port = int(os.getenv("PORT", 8080))
+mcp = FastMCP(name="PR Review MCP Server", host="0.0.0.0", port=port)
 
 review_processor_instance = ReviewProcessor()
 logging.info("ReviewProcessor instance initialized in main.py.")
@@ -93,6 +94,5 @@ async def health_check_mcp() -> Response:
 
 
 if __name__ == "__main__":
-    port = int(os.getenv("PORT", 8080))
     logging.info(f"Starting FastMCP server on host 0.0.0.0, port {port}")
-    mcp.run(port=port)
+    mcp.run()
