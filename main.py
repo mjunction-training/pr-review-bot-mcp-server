@@ -52,7 +52,7 @@ async def pr_review_handler(input_data: ReviewInput) -> ReviewOutput:
     It takes a ReviewInput object and returns a ReviewOutput object.
     """
     try:
-        comments_data, summary, security_issues_data = await review_processor_instance.process_review(
+        comments_data, summary, security_issues_data = await review_processor_instance.process_review_no_chunk(
             diff=input_data.diff,
             repo=input_data.repo,
             pr_id=input_data.pr_id,

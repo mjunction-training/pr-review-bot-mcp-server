@@ -90,6 +90,79 @@ class ReviewProcessor:
         
         return comments, security_issues
 
+    async def process_review_no_chunk(self, diff: str, repo: str, pr_id: int, metadata: Dict[str, Any],
+                             review_prompt_content: str, summary_prompt_content: str) -> tuple[
+        List[Dict], str, List[Dict]]:
+        """
+        Process a PR review by sending the entire diff, querying Hugging Face,
+        and extracting structured comments and a summary.
+        """
+        # Remove chunking and send the entire diff in one shot
+        review_prompt = ChatPromptTemplate.from_messages(
+            [
+                ("system", review_prompt_content),
+                ("human", diff)  # Send the full diff directly
+            ]
+        )
+
+        prompt_content_for_hf = self.parser.parse(review_prompt.format_messages()[0].content)
+
+        review_response = self.query_huggingface(
+            payload={
+                "inputs": prompt_content_for_hf
+            },
+            model_name=os.getenv("HUGGING_FACE_REVIEW_MODEL", "meta-llama/Meta-Llama-3-8B-Instruct")
+        )
+
+        all_comments = []
+        all_security_issues = []
+
+        if review_response and isinstance(review_response, list) and review_response[0] and "generated_text" in \
+                review_response[0]:
+            review_text = review_response[0]["generated_text"]
+            comments, security_issues = self.parse_review_output(review_text)
+            all_comments.extend(comments)
+            all_security_issues.extend(security_issues)
+        else:
+            logger.warning(f"No valid review response for PR #{pr_id}. Response: {review_response}")
+
+        comments_text = "\n".join([c["comment"] for c in all_comments])
+        security_issues_text = "\n".join([s["issue"] for s in all_security_issues])
+
+        final_summary_prompt_text = f"""
+               {summary_prompt_content}
+
+               <comments_and_security_issues>
+               Comments:
+               {comments_text}
+               Security Issues:
+               {security_issues_text}
+               </comments_and_security_issues>
+               """
+
+        summary_prompt = ChatPromptTemplate.from_messages(
+            [
+                ("human", final_summary_prompt_text)
+            ]
+        )
+
+        summary_response = self.query_huggingface(
+            payload={
+                "inputs": self.parser.parse(summary_prompt.format_messages()[0].content)
+            },
+            model_name=os.getenv("HUGGING_FACE_SUMMARY_MODEL", "meta-llama/Meta-Llama-3-8B-Instruct")
+        )
+
+        summary = "No summary generated."
+        if summary_response and isinstance(summary_response, list) and summary_response[0] and "generated_text" in \
+                summary_response[0]:
+            summary = summary_response[0]["generated_text"].strip()
+        else:
+            logger.warning(f"No valid summary response for PR #{pr_id}. Response: {summary_response}")
+
+        return all_comments, summary, all_security_issues
+
+
     async def process_review(self, diff: str, repo: str, pr_id: int, metadata: Dict[str, Any], review_prompt_content: str, summary_prompt_content: str) -> tuple[List[Dict], str, List[Dict]]:
         """
         Process a PR review by chunking the diff, querying Hugging Face,
